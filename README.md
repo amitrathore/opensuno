@@ -1,6 +1,6 @@
 # OpenSuno
 
-> Open-source Suno AI API with Chrome Extension bridge — zero-config auth & automatic captcha bypass.
+> Open-source Suno AI API with a local Chrome Extension bridge for browser-managed authentication and verification.
 > Built with Claude Code & Paean AI.
 
 Two modes of operation: **Bridge Mode** (Chrome Extension — recommended) and **Cookie Mode** (server-side).
@@ -17,8 +17,8 @@ Two modes of operation: **Bridge Mode** (Chrome Extension — recommended) and *
 
 ## Features
 
-- **Chrome Extension + Bridge Server** — zero-config auth, automatic captcha bypass, no token expiry
-- **MCP server** — use as a tool provider for Claude Desktop, Cursor, or any MCP-compatible AI agent
+- **Chrome Extension + Bridge Server** — browser-managed auth and native interactive verification
+- **MCP server** — use as a tool provider for Codex, Claude Code, Claude Desktop, Cursor, or any MCP-compatible AI agent
 - Direct JWT Token authentication (Cookie Mode) — extract from browser Network tab
 - Suno models through V6 supported, including V6 Standard, Wild, and Mini
 - OpenAI-compatible `/v1/chat/completions` endpoint
@@ -77,7 +77,7 @@ External Clients (curl, AI agents, etc.)
 #### 1. Install dependencies and build the extension
 
 ```bash
-git clone https://github.com/paean-ai/opensuno.git
+git clone https://github.com/amitrathore/opensuno.git
 cd opensuno
 bun install
 bun run ext:build
@@ -102,30 +102,31 @@ Open https://suno.com/create in a tab and make sure you're logged in. The extens
 bun run bridge
 ```
 
-The bridge server starts at `http://localhost:3001`. The extension popup should show **Connected**.
+The bridge server binds to `127.0.0.1` by default and starts at `http://127.0.0.1:3001`. In the extension popup, set **Bridge Server URL** to `ws://127.0.0.1:3001/ws`; it should then show **Connected**.
 
 #### 5. Test it
 
 ```bash
 # Check connection status
-curl http://localhost:3001/api/status
+curl http://127.0.0.1:3001/api/status
 
 # Check credits
-curl http://localhost:3001/api/get_limit
+curl http://127.0.0.1:3001/api/get_limit
 
 # List Style Personas saved to your Suno account
-curl http://localhost:3001/api/personas
+curl http://127.0.0.1:3001/api/personas
 
 # Get one Style Persona and its associated clips
-curl 'http://localhost:3001/api/persona?id=PERSONA_ID&page=0'
+curl 'http://127.0.0.1:3001/api/persona?id=PERSONA_ID&page=0'
 
-# Generate music (captcha handled automatically)
-curl -X POST http://localhost:3001/api/custom_generate \
+# Generate music (browser-native verification is used when required)
+curl -X POST http://127.0.0.1:3001/api/custom_generate \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "sunshine and rainbows",
     "tags": "pop, upbeat",
     "title": "Happy Day",
+    "model": "chirp-hawk",
     "persona_id": "PERSONA_ID"
   }'
 ```
@@ -134,14 +135,31 @@ curl -X POST http://localhost:3001/api/custom_generate \
 
 The bridge server includes a built-in MCP endpoint at `/mcp` (Streamable HTTP transport). Configure your AI client:
 
-**Claude Code** — edit `~/.claude/claude_code_config.json`:
+**Codex:**
+
+```bash
+codex mcp add opensuno --url http://127.0.0.1:3001/mcp
+```
+
+Restart Codex after adding the server. Use `/mcp` to inspect its connection, then ask Codex to call `get_credits` as a read-only smoke test.
+
+**Claude Code:**
+
+```bash
+claude mcp add --transport http --scope user opensuno http://127.0.0.1:3001/mcp
+claude mcp get opensuno
+```
+
+Restart Claude Code and use `/mcp` to verify the connection.
+
+**Generic Streamable HTTP configuration:**
 
 ```json
 {
   "mcpServers": {
-    "suno": {
-      "type": "url",
-      "url": "http://localhost:3001/mcp"
+    "opensuno": {
+      "type": "http",
+      "url": "http://127.0.0.1:3001/mcp"
     }
   }
 }
@@ -160,6 +178,73 @@ bun run ext:watch       # Build extension with file watching
 
 > **Note**: After rebuilding the extension, click the refresh button on `chrome://extensions/` and then **refresh the suno.com tab** to load the updated scripts.
 
+### Keep the bridge running on macOS with launchd
+
+For a workstation login, use a per-user **LaunchAgent** (often informally called a LaunchDaemon). `RunAtLoad` starts the bridge when you log in, and `KeepAlive` restarts it if the process exits. The bridge still binds only to `127.0.0.1`.
+
+Create `~/Library/LaunchAgents/com.sonu.opensuno-bridge.plist` with the following content. Replace both absolute paths; launchd does not expand `~` or shell variables in a plist.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sonu.opensuno-bridge</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/ABSOLUTE/PATH/TO/bun</string>
+    <string>run</string>
+    <string>bridge</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/ABSOLUTE/PATH/TO/opensuno</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>BRIDGE_HOST</key>
+    <string>127.0.0.1</string>
+    <key>BRIDGE_PORT</key>
+    <string>3001</string>
+    <key>SUNO_DEFAULT_MODEL</key>
+    <string>chirp-hawk</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/opensuno-bridge.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/opensuno-bridge.stderr.log</string>
+</dict>
+</plist>
+```
+
+Find the Bun executable with `command -v bun`, then load and inspect the agent:
+
+```bash
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.sonu.opensuno-bridge.plist"
+launchctl print "gui/$(id -u)/com.sonu.opensuno-bridge"
+curl http://127.0.0.1:3001/api/status
+```
+
+After editing the plist, restart it with:
+
+```bash
+launchctl bootout "gui/$(id -u)/com.sonu.opensuno-bridge"
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.sonu.opensuno-bridge.plist"
+```
+
+The agent keeps the bridge process alive, but Chrome must also be running with the extension connected to a logged-in `suno.com` tab before Suno tools can succeed. Keep the plist local because it contains machine-specific paths.
+
 ---
 
 ## Cookie Mode (Alternative)
@@ -167,7 +252,7 @@ bun run ext:watch       # Build extension with file watching
 ### 1. Install dependencies
 
 ```bash
-git clone https://github.com/paean-ai/opensuno.git
+git clone https://github.com/amitrathore/opensuno.git
 cd opensuno
 bun install
 ```
@@ -251,6 +336,8 @@ curl -X POST http://localhost:3000/api/custom_generate \
 
 To specify a model, add `"model": "chirp-hawk-wild"` (or any model ID) to your request body. An explicit request model takes precedence over `SUNO_DEFAULT_MODEL`. Set `SUNO_DEFAULT_MODEL=chirp-crow` to restore V5 as the process-wide default without changing code.
 
+The same precedence applies to MCP calls: a tool's `model` argument wins over `SUNO_DEFAULT_MODEL`, which wins over the built-in V6 default.
+
 ## API Reference
 
 These endpoints are available in both Bridge Mode (port 3001) and Cookie Mode (port 3000):
@@ -293,8 +380,14 @@ Full interactive docs available at `/docs` after starting the server.
 
 **Bridge Mode:**
 ```bash
+# Optional — address to bind (default: loopback only)
+BRIDGE_HOST=127.0.0.1
+
 # Optional — override bridge server port (default: 3001)
 BRIDGE_PORT=3001
+
+# Optional — process-wide generation model (default: V6 Standard)
+SUNO_DEFAULT_MODEL=chirp-hawk
 ```
 
 Bridge Mode requires no other configuration — auth and captcha are handled by the extension.
@@ -331,7 +424,7 @@ This project includes MCP servers for both Bridge Mode and Cookie Mode, allowing
 
 ### Bridge Mode MCP (Recommended)
 
-When running the bridge server (`bun run bridge`), the MCP endpoint is available at `http://localhost:3001/mcp` using Streamable HTTP transport. See [Bridge MCP Server](#bridge-mcp-server) above for configuration.
+When running the bridge server (`bun run bridge`), the MCP endpoint is available at `http://127.0.0.1:3001/mcp` using Streamable HTTP transport. See [Bridge MCP Server](#bridge-mcp-server) above for configuration.
 
 ### Cookie Mode MCP
 
@@ -377,21 +470,11 @@ This is the standard way to use MCP locally. The AI client launches the server a
 - Command: `bun run src/mcp/stdio.ts`
 - Working directory: `/path/to/opensuno`
 
-**Claude Code** — edit `~/.claude/claude_code_config.json`:
+**Claude Code** can register stdio servers from the CLI. Options must precede the server name:
 
-```json
-{
-  "mcpServers": {
-    "suno": {
-      "command": "bun",
-      "args": ["run", "src/mcp/stdio.ts"],
-      "cwd": "/path/to/opensuno",
-      "env": {
-        "SUNO_COOKIE": "__session=xxx; __client=xxx; ..."
-      }
-    }
-  }
-}
+```bash
+claude mcp add --transport stdio --scope user suno -- \
+  bun run --cwd /path/to/opensuno src/mcp/stdio.ts
 ```
 
 If you have a `.env` file configured in the project directory, you can omit the `env` block — the server reads `.env` automatically.
@@ -413,6 +496,54 @@ The server listens at `http://localhost:3001/mcp` and supports the MCP Streamabl
 Remote MCP clients can connect using:
 - Endpoint: `http://your-server:3001/mcp`
 - Transport: Streamable HTTP
+
+### Access from another computer using SSH
+
+The bridge intentionally remains loopback-only because the MCP and REST endpoints do not authenticate clients. For trusted computers on a private LAN, tunnel the service over SSH instead of changing `BRIDGE_HOST`:
+
+```bash
+# Run on the client computer; replace the user and host as needed.
+ssh -N \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 \
+  -L 3301:127.0.0.1:3001 \
+  user@opensuno-host.local
+```
+
+While the tunnel is running, use `http://127.0.0.1:3301/mcp` on the client computer:
+
+```bash
+# Codex
+codex mcp add opensuno --url http://127.0.0.1:3301/mcp
+
+# Claude Code
+claude mcp add --transport http --scope user opensuno http://127.0.0.1:3301/mcp
+```
+
+For another MCP client, configure a **Streamable HTTP** server named `opensuno` with this URL:
+
+```text
+http://127.0.0.1:3301/mcp
+```
+
+Confirm the tunnel and bridge before starting the MCP client:
+
+```bash
+curl http://127.0.0.1:3301/api/status
+```
+
+Restart Codex or Claude Code after adding the server and use `/mcp` to verify that `opensuno` connected. Chrome, the extension, and a logged-in `suno.com` tab continue to run only on the OpenSuno host. The SSH tunnel must remain open while the remote MCP client is in use.
+
+This layout deliberately exposes no unauthenticated OpenSuno port to the LAN:
+
+```text
+Remote MCP client
+  -> 127.0.0.1:3301 on the remote computer
+  -> encrypted SSH tunnel
+  -> 127.0.0.1:3001 on the OpenSuno host
+  -> Chrome extension
+  -> logged-in Suno account
+```
 
 #### Running both Next.js API and MCP server
 
@@ -438,13 +569,31 @@ docker run -d -p 3000:3000 \
   opensuno
 ```
 
+## Development and verification
+
+```bash
+# Offline unit tests (no Suno credits used)
+bun run test
+
+# Compile the standalone MCP implementation
+bun run build:mcp
+
+# Rebuild the Chrome extension
+bun run ext:build
+```
+
+Live generation is an explicit integration test and may consume Suno credits. Start with `get_credits`, submit one inexpensive request, poll it with `get_audio`, and confirm the completed song appears in the same Suno account's library.
+
 ## FAQ
 
 **Q: Which mode should I use?**
-Use **Bridge Mode** if you're running locally. It handles authentication and captcha automatically — no token management needed. Use **Cookie Mode** for server/cloud deployments where you can't run a browser extension.
+Use **Bridge Mode** if you're running locally. Authentication and any required verification remain in the normal logged-in browser flow, so no copied token management is needed. Use **Cookie Mode** for server/cloud deployments where you can't run a browser extension.
 
 **Q: The extension shows "Disconnected"?**
-Make sure the bridge server is running (`bun run bridge`). Check that the bridge URL in the extension popup matches (default: `ws://localhost:3001/ws`).
+Make sure the bridge server is running (`bun run bridge`). Check that the bridge URL in the extension popup is `ws://127.0.0.1:3001/ws`, open a logged-in `https://suno.com/create` tab, and refresh that tab after rebuilding or reloading the extension.
+
+**Q: Codex or Claude Code cannot initialize the MCP server?**
+Confirm `curl http://127.0.0.1:3001/api/status` succeeds and reports that the extension is connected. The bridge must already be running before the MCP client starts. If you are using another computer, test port `3301` instead and keep the SSH tunnel open.
 
 **Q: API calls fail after reloading the extension?**
 After reloading the extension in `chrome://extensions/`, you must also **refresh the suno.com tab** to inject the updated scripts.
