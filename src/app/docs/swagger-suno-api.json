@@ -35,8 +35,8 @@
                   },
                   "model": {
                     "type": "string",
-                    "description": "Model name ,default is chirp-v3-5",
-                    "example": "chirp-v3-5|chirp-v3-0"
+                    "description": "Suno model ID. Defaults to SUNO_DEFAULT_MODEL or chirp-hawk.",
+                    "example": "chirp-hawk"
                   },
                   "wait_audio": {
                     "type": "boolean",
@@ -155,8 +155,13 @@
                   },
                   "model": {
                     "type": "string",
-                    "description": "Model name ,default is chirp-v3-5",
-                    "example": "chirp-v3-5|chirp-v3-0"
+                    "description": "Suno model ID. Defaults to SUNO_DEFAULT_MODEL or chirp-hawk.",
+                    "example": "chirp-hawk"
+                  },
+                  "persona_id": {
+                    "type": "string",
+                    "description": "Optional Style Persona ID to apply to this custom generation.",
+                    "example": "e483d2f0-50ca-4a09-8a74-b9e074646377"
                   },
                   "wait_audio": {
                     "type": "boolean",
@@ -238,8 +243,8 @@
                   },
                   "model": {
                     "type": "string",
-                    "description": "Model name ,default is chirp-v3-5",
-                    "example": "chirp-v3-5|chirp-v3-0"
+                    "description": "Suno model ID. Defaults to SUNO_DEFAULT_MODEL or chirp-hawk.",
+                    "example": "chirp-hawk"
                   }
                 }
               }
@@ -589,6 +594,33 @@
         }
       }
     },
+    "/api/personas": {
+      "get": {
+        "summary": "List owned Style Personas.",
+        "description": "Retrieve Style Personas saved to the current Suno account.",
+        "tags": ["default"],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "personas": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/persona": {
       "get": {
         "summary": "Get persona information and clips.",
@@ -608,10 +640,11 @@
             "name": "page",
             "in": "query",
             "required": false,
-            "description": "Page number (defaults to 1)",
+            "description": "Zero-based page number (defaults to 0)",
             "schema": {
               "type": "integer",
-              "default": 1
+              "default": 0,
+              "minimum": 0
             }
           }
         ],

@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { sunoApi } from "@/lib/SunoApi";
 import { corsHeaders } from "@/lib/utils";
+import { normalizePersonaPage } from "@/lib/personas";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
         });
       }
 
-      const pageNumber = page ? parseInt(page) : 1;
+      const pageNumber = normalizePersonaPage(page == null ? 0 : Number(page));
       const personaInfo = await (await sunoApi()).getPersonaPaginated(personaId, pageNumber);
 
       return new NextResponse(JSON.stringify(personaInfo), {
@@ -31,11 +32,12 @@ export async function GET(req: NextRequest) {
           ...corsHeaders
         }
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching persona:', error);
 
-      return new NextResponse(JSON.stringify({ error: 'Internal server error' }), {
-        status: 500,
+      const isValidationError = error.message === 'page must be a non-negative integer';
+      return new NextResponse(JSON.stringify({ error: isValidationError ? error.message : 'Internal server error' }), {
+        status: isValidationError ? 400 : 500,
         headers: {
           'Content-Type': 'application/json',
           ...corsHeaders

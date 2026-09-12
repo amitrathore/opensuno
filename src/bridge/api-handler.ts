@@ -4,6 +4,13 @@
  */
 
 import type { WebSocketManager } from './ws-manager';
+import { resolveModel } from '../lib/models';
+import {
+  normalizePersonaDetail,
+  normalizePersonaId,
+  normalizePersonaList,
+  normalizePersonaPage,
+} from '../lib/personas';
 
 const SUNO_API_BASE = 'https://studio-api.prod.suno.com';
 
@@ -32,7 +39,7 @@ export async function handleApiRequest(
         const tokenResp = await wsManager.sendRequest('get_token', {
           url: '', method: 'GET',
         });
-        console.log('[API] Token response:', JSON.stringify(tokenResp).slice(0, 200));
+        console.log('[API] Token retrieval completed');
         return json({ success: true, hasToken: !!tokenResp.result?.data?.token });
       } catch (err: any) {
         console.log('[API] Token test failed:', err.message);
@@ -68,6 +75,11 @@ export async function handleApiRequest(
     // POST /api/custom_generate — custom generation with lyrics/tags/title
     if (method === 'POST' && path === '/api/custom_generate') {
       const body = await req.json();
+      if (body.persona_id !== undefined && (
+        typeof body.persona_id !== 'string' || body.persona_id.trim() === ''
+      )) {
+        return json({ error: 'persona_id must be a non-blank string' }, 400);
+      }
       return await proxyGenerate(wsManager, body, true);
     }
 
@@ -96,6 +108,39 @@ export async function handleApiRequest(
       return json(resp.result!.data);
     }
 
+    // GET /api/personas — list owned Style Personas
+    if (method === 'GET' && path === '/api/personas') {
+      const resp = await wsManager.sendRequest('api_call', {
+        url: '/api/search/',
+        method: 'POST',
+        body: {
+          search_queries: [{ term: '', search_type: 'library_persona' }],
+        },
+      });
+      if (resp.error) return json({ error: resp.error.message }, 500);
+      return json(normalizePersonaList(resp.result!.data));
+    }
+
+    // GET /api/persona?id=...&page=... — Persona details and associated clips
+    if (method === 'GET' && path === '/api/persona') {
+      const rawPersonaId = url.searchParams.get('id');
+      if (!rawPersonaId || rawPersonaId.trim() === '') return json({ error: 'id is required' }, 400);
+      const personaId = normalizePersonaId(rawPersonaId)!;
+
+      const pageParam = url.searchParams.get('page');
+      const rawPage = pageParam == null ? 0 : Number(pageParam);
+      if (!Number.isInteger(rawPage) || rawPage < 0) {
+        return json({ error: 'page must be a non-negative integer' }, 400);
+      }
+      const page = normalizePersonaPage(rawPage);
+      const resp = await wsManager.sendRequest('api_call', {
+        url: `/api/persona/get-persona-paginated/${encodeURIComponent(personaId)}/?page=${page}`,
+        method: 'GET',
+      });
+      if (resp.error) return json({ error: resp.error.message }, 500);
+      return json(normalizePersonaDetail(resp.result!.data));
+    }
+
     // GET /api/get_limit — billing info
     if (method === 'GET' && path === '/api/get_limit') {
       console.log('[API] get_limit: sending request to extension...');
@@ -103,7 +148,7 @@ export async function handleApiRequest(
         url: '/api/billing/info/',
         method: 'GET',
       });
-      console.log('[API] get_limit: got response', JSON.stringify(resp).slice(0, 300));
+      console.log('[API] get_limit: response received');
       if (resp.error) return json({ error: resp.error.message }, 500);
       return json(resp.result!.data);
     }
@@ -222,10 +267,10 @@ async function proxyGenerate(
 }
 
 /** Build the Suno API payload matching SunoApi.ts format */
-function buildGeneratePayload(body: any, isCustom: boolean) {
+export function buildGeneratePayload(body: any, isCustom: boolean) {
   const payload: any = {
     make_instrumental: body.make_instrumental || false,
-    mv: body.model || body.mv || 'chirp-crow',
+    mv: resolveModel(body.model || body.mv),
     prompt: '',
     generation_type: 'TEXT',
     metadata: {
@@ -242,7 +287,7 @@ function buildGeneratePayload(body: any, isCustom: boolean) {
     cover_clip_id: null,
     cover_start_s: null,
     cover_end_s: null,
-    persona_id: null,
+    persona_id: normalizePersonaId(body.persona_id),
     artist_clip_id: null,
     artist_start_s: null,
     artist_end_s: null,

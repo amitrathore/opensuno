@@ -20,7 +20,7 @@ Two modes of operation: **Bridge Mode** (Chrome Extension — recommended) and *
 - **Chrome Extension + Bridge Server** — zero-config auth, automatic captcha bypass, no token expiry
 - **MCP server** — use as a tool provider for Claude Desktop, Cursor, or any MCP-compatible AI agent
 - Direct JWT Token authentication (Cookie Mode) — extract from browser Network tab
-- All Suno model versions supported (V4 / V4.5+ / V4.5 Pro / V5)
+- Suno models through V6 supported, including V6 Standard, Wild, and Mini
 - OpenAI-compatible `/v1/chat/completions` endpoint
 - Web-based cookie management UI at `/cookie`
 - One-click Vercel deployment (Cookie Mode)
@@ -113,13 +113,20 @@ curl http://localhost:3001/api/status
 # Check credits
 curl http://localhost:3001/api/get_limit
 
+# List Style Personas saved to your Suno account
+curl http://localhost:3001/api/personas
+
+# Get one Style Persona and its associated clips
+curl 'http://localhost:3001/api/persona?id=PERSONA_ID&page=0'
+
 # Generate music (captcha handled automatically)
 curl -X POST http://localhost:3001/api/custom_generate \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "sunshine and rainbows",
     "tags": "pop, upbeat",
-    "title": "Happy Day"
+    "title": "Happy Day",
+    "persona_id": "PERSONA_ID"
   }'
 ```
 
@@ -231,15 +238,18 @@ curl -X POST http://localhost:3000/api/custom_generate \
 
 ## Supported Models
 
-| Version  | Model ID        | Constant                  | Note              |
-|----------|-----------------|---------------------------|-------------------|
-| V3.5     | `chirp-v3-5`    | `SUNO_MODELS.V3_5`        | Legacy            |
-| V4       | `chirp-v4`      | `SUNO_MODELS.V4`          | —                 |
-| V4.5+    | `chirp-bluejay` | `SUNO_MODELS.V4_5_PLUS`   | Bluejay           |
-| V4.5 Pro | `chirp-auk`     | `SUNO_MODELS.V4_5_PRO`    | Auk               |
-| **V5**   | `chirp-crow`    | `SUNO_MODELS.V5`          | Crow **(default)**|
+| Version      | Model ID           | Constant                  | Note                  |
+|--------------|--------------------|---------------------------|-----------------------|
+| V3.5         | `chirp-v3-5`       | `SUNO_MODELS.V3_5`        | Legacy                |
+| V4           | `chirp-v4`         | `SUNO_MODELS.V4`          | —                     |
+| V4.5+        | `chirp-bluejay`    | `SUNO_MODELS.V4_5_PLUS`   | Bluejay               |
+| V4.5 Pro     | `chirp-auk`        | `SUNO_MODELS.V4_5_PRO`    | Auk                   |
+| V5           | `chirp-crow`       | `SUNO_MODELS.V5`          | Crow                  |
+| **V6**       | `chirp-hawk`       | `SUNO_MODELS.V6`          | Standard **(default)**|
+| V6 Wild      | `chirp-hawk-wild`  | `SUNO_MODELS.V6_WILD`     | Experimental          |
+| V6 Mini      | `chirp-goose`      | `SUNO_MODELS.V6_MINI`     | Efficient             |
 
-To specify a model, add `"model": "chirp-bluejay"` (or any model ID) to your request body.
+To specify a model, add `"model": "chirp-hawk-wild"` (or any model ID) to your request body. An explicit request model takes precedence over `SUNO_DEFAULT_MODEL`. Set `SUNO_DEFAULT_MODEL=chirp-crow` to restore V5 as the process-wide default without changing code.
 
 ## API Reference
 
@@ -250,6 +260,8 @@ These endpoints are available in both Bridge Mode (port 3001) and Cookie Mode (p
 | GET    | `/api/get_limit`          | Get account credits remaining                    |
 | POST   | `/api/generate`           | Generate music (simple mode)                     |
 | POST   | `/api/custom_generate`    | Generate music (custom mode with lyrics/tags)     |
+| GET    | `/api/personas`           | List owned Style Personas                         |
+| GET    | `/api/persona?id=xxx`     | Get Style Persona details and associated clips   |
 | POST   | `/api/generate_lyrics`    | Generate lyrics from a prompt                    |
 | GET    | `/api/get?ids=xxx`        | Get music details by ID(s)                       |
 | POST   | `/api/extend_audio`       | Extend an audio clip                             |
@@ -328,8 +340,10 @@ When running the bridge server (`bun run bridge`), the MCP endpoint is available
 | Tool | Description |
 |------|-------------|
 | `get_credits` | Check remaining credits and usage limits |
+| `list_personas` | List Style Personas owned by the account |
+| `get_persona` | Get Style Persona details and associated clips |
 | `generate` | Generate music from a text prompt |
-| `custom_generate` | Generate music with lyrics, style tags, and title |
+| `custom_generate` | Generate music with lyrics, style tags, title, and an optional `persona_id` |
 | `generate_lyrics` | Generate lyrics from a topic/theme |
 | `get_audio` | Get audio clip status and details |
 | `extend_audio` | Extend an existing clip from a timestamp |

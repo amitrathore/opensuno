@@ -20,7 +20,7 @@ Built with Claude Code & Paean AI.
 
 - **Chrome Extension + Bridge Server** — zero-config auth, automatic captcha bypass
 - **MCP Server** — use as a tool provider for Claude Desktop, Cursor, or any MCP-compatible AI agent
-- All Suno model versions supported (V4 / V4.5+ / V4.5 Pro / V5)
+- Suno models through V6 supported, including V6 Standard, Wild, and Mini
 - REST API compatible with the original suno-api format
 - OpenAI-compatible \`/v1/chat/completions\` endpoint
 - One-click Vercel deployment (Cookie Mode)

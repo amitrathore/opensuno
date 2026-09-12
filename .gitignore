@@ -15,6 +15,7 @@
 
 # production
 /build
+/dist/
 
 # misc
 .DS_Store
@@ -63,6 +64,9 @@ next-env.d.ts
 
 # Extension build output (rebuild with bun run ext:build)
 extension/dist/
+
+# Local launchd services contain machine-specific absolute paths
+/launchd/
 
 # Generated music files
 *.mp3

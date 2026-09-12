@@ -15,6 +15,7 @@ import { createBridgeMcpServer } from './mcp-bridge';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 
 const PORT = parseInt(process.env.BRIDGE_PORT || '3001', 10);
+const HOST = process.env.BRIDGE_HOST || '127.0.0.1';
 const wsManager = new WebSocketManager();
 
 // MCP session management — one transport per session
@@ -50,11 +51,11 @@ async function handleMcpRequest(req: Request): Promise<Response> {
 
   // New session — only for initialization POST requests
   if (req.method === 'POST') {
-    // Clone the request so we can peek at the body without consuming it
-    const cloned = req.clone();
     let body: any;
     try {
-      body = await cloned.json();
+      // Bun 1.1.x can fail to parse a cloned inbound request body. The MCP
+      // transport accepts a pre-parsed body, so consume the original once.
+      body = await req.json();
     } catch {
       return Response.json(
         { jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' }, id: null },
@@ -118,6 +119,7 @@ function addCorsHeaders(resp: Response): Response {
 
 // --- Start the server ---
 const server = Bun.serve({
+  hostname: HOST,
   port: PORT,
 
   async fetch(req, server) {
@@ -191,10 +193,10 @@ console.log(`
 ╔══════════════════════════════════════════════╗
 ║         Suno API Bridge Server               ║
 ╠══════════════════════════════════════════════╣
-║  REST API:  http://localhost:${PORT}/api/*       ║
-║  WebSocket: ws://localhost:${PORT}/ws            ║
-║  MCP:       http://localhost:${PORT}/mcp         ║
-║  Status:    http://localhost:${PORT}/api/status   ║
+║  REST API:  http://${HOST}:${PORT}/api/*       ║
+║  WebSocket: ws://${HOST}:${PORT}/ws            ║
+║  MCP:       http://${HOST}:${PORT}/mcp         ║
+║  Status:    http://${HOST}:${PORT}/api/status   ║
 ╚══════════════════════════════════════════════╝
 
 Waiting for Chrome extension to connect...

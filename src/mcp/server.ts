@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { sunoApi, SUNO_MODELS, DEFAULT_MODEL } from "../lib/SunoApi.js";
+import { sunoApi } from "../lib/SunoApi.js";
+import { DEFAULT_MODEL, SUNO_MODELS } from "../lib/models.js";
 
 /**
  * Create and configure the Suno MCP server with all tool definitions.
@@ -29,6 +30,51 @@ export function createSunoMcpServer() {
         const credits = await api.get_credits();
         return {
           content: [{ type: "text", text: JSON.stringify(credits, null, 2) }],
+        };
+      } catch (error: any) {
+        return {
+          content: [{ type: "text", text: `Error: ${error.message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // --- Tool: list_personas ---
+  server.tool(
+    "list_personas",
+    "List the Style Personas owned by the Suno account",
+    {},
+    async () => {
+      try {
+        const api = await sunoApi();
+        const result = await api.listPersonas();
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (error: any) {
+        return {
+          content: [{ type: "text", text: `Error: ${error.message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // --- Tool: get_persona ---
+  server.tool(
+    "get_persona",
+    "Get Style Persona details and associated clips by Persona ID",
+    {
+      persona_id: z.string().trim().min(1).describe("ID of the Style Persona"),
+      page: z.number().int().nonnegative().optional().default(0).describe("Associated clips page"),
+    },
+    async ({ persona_id, page }) => {
+      try {
+        const api = await sunoApi();
+        const result = await api.getPersonaPaginated(persona_id, page);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         };
       } catch (error: any) {
         return {
@@ -109,6 +155,12 @@ export function createSunoMcpServer() {
         .string()
         .optional()
         .describe('Styles to avoid, e.g. "heavy metal, screaming"'),
+      persona_id: z
+        .string()
+        .trim()
+        .min(1)
+        .optional()
+        .describe("Style Persona ID to apply to this custom generation"),
     },
     async ({
       prompt,
@@ -118,6 +170,7 @@ export function createSunoMcpServer() {
       model,
       wait_audio,
       negative_tags,
+      persona_id,
     }) => {
       try {
         const api = await sunoApi();
@@ -128,7 +181,8 @@ export function createSunoMcpServer() {
           make_instrumental,
           model,
           wait_audio,
-          negative_tags
+          negative_tags,
+          persona_id
         );
         return {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],

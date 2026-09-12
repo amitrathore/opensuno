@@ -6,16 +6,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { WebSocketManager } from './ws-manager';
-
-const SUNO_MODELS = {
-  V3_5: 'chirp-v3-5',
-  V4: 'chirp-v4',
-  V4_5_PLUS: 'chirp-bluejay',
-  V4_5_PRO: 'chirp-auk',
-  V5: 'chirp-crow',
-} as const;
-
-const DEFAULT_MODEL = SUNO_MODELS.V5;
+import { DEFAULT_MODEL, SUNO_MODELS, resolveModel } from '../lib/models';
+import {
+  normalizePersonaDetail,
+  normalizePersonaId,
+  normalizePersonaList,
+  normalizePersonaPage,
+} from '../lib/personas';
 
 /** Check if captcha is required */
 async function checkCaptcha(wsManager: WebSocketManager): Promise<boolean> {
@@ -93,6 +90,54 @@ export function createBridgeMcpServer(wsManager: WebSocketManager) {
     }
   );
 
+  // --- list_personas ---
+  server.tool(
+    'list_personas',
+    'List the Style Personas owned by the Suno account',
+    {},
+    async () => {
+      try {
+        const resp = await wsManager.sendRequest('api_call', {
+          url: '/api/search/',
+          method: 'POST',
+          body: {
+            search_queries: [{ term: '', search_type: 'library_persona' }],
+          },
+        });
+        if (resp.error) throw new Error(resp.error.message);
+        const result = normalizePersonaList(resp.result!.data);
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: 'text' as const, text: `Error: ${error.message}` }], isError: true };
+      }
+    }
+  );
+
+  // --- get_persona ---
+  server.tool(
+    'get_persona',
+    'Get Style Persona details and associated clips by Persona ID',
+    {
+      persona_id: z.string().trim().min(1).describe('ID of the Style Persona'),
+      page: z.number().int().nonnegative().optional().default(0).describe('Associated clips page'),
+    },
+    async ({ persona_id, page }) => {
+      try {
+        const normalizedId = normalizePersonaId(persona_id)!;
+        const normalizedPage = normalizePersonaPage(page);
+        const resp = await wsManager.sendRequest('api_call', {
+          url: `/api/persona/get-persona-paginated/${encodeURIComponent(normalizedId)}/?page=${normalizedPage}`,
+          method: 'GET',
+        });
+        if (resp.error) throw new Error(resp.error.message);
+        const result = normalizePersonaDetail(resp.result!.data);
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: 'text' as const, text: `Error: ${error.message}` }], isError: true };
+      }
+    }
+  );
+
   // --- generate ---
   server.tool(
     'generate',
@@ -140,10 +185,11 @@ export function createBridgeMcpServer(wsManager: WebSocketManager) {
       model: z.string().optional().describe(`Model version. Default: ${DEFAULT_MODEL}`),
       wait_audio: z.boolean().optional().default(false).describe('Wait for generation to complete'),
       negative_tags: z.string().optional().describe('Styles to avoid'),
+      persona_id: z.string().trim().min(1).optional().describe('Style Persona ID to apply to this custom generation'),
     },
-    async ({ prompt, tags, title, make_instrumental, model, wait_audio, negative_tags }) => {
+    async ({ prompt, tags, title, make_instrumental, model, wait_audio, negative_tags, persona_id }) => {
       try {
-        const payload = buildPayload({ prompt, tags, title, make_instrumental, model, negative_tags }, true);
+        const payload = buildPayload({ prompt, tags, title, make_instrumental, model, negative_tags, persona_id }, true);
         await addCaptchaIfNeeded(wsManager, payload);
         const resp = await wsManager.sendRequest('api_call', {
           url: '/api/generate/v2/',
@@ -318,10 +364,10 @@ export function createBridgeMcpServer(wsManager: WebSocketManager) {
 }
 
 /** Build the Suno API generate payload */
-function buildPayload(opts: any, isCustom: boolean) {
+export function buildPayload(opts: any, isCustom: boolean) {
   const payload: any = {
     make_instrumental: opts.make_instrumental || false,
-    mv: opts.model || DEFAULT_MODEL,
+    mv: resolveModel(opts.model),
     prompt: '',
     generation_type: 'TEXT',
     metadata: {
@@ -338,7 +384,7 @@ function buildPayload(opts: any, isCustom: boolean) {
     cover_clip_id: null,
     cover_start_s: null,
     cover_end_s: null,
-    persona_id: null,
+    persona_id: normalizePersonaId(opts.persona_id),
     artist_clip_id: null,
     artist_start_s: null,
     artist_end_s: null,

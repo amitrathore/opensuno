@@ -23,7 +23,8 @@ export default function Docs() {
 - \`/v1/chat/completions\`: Generate music - Call the generate API in a format 
   that works with OpenAI’s API.
 - \`/api/custom_generate\`: Generate music (Custom Mode, support setting lyrics, 
-  music style, title, etc.)
+  music style, title, and an optional Style Persona ID)
+- \`/api/personas\`: List Style Personas owned by the current account
 - \`/api/generate_lyrics\`: Generate lyrics based on prompt
 - \`/api/get\`: Get music information based on the id. Use “,” to separate multiple 
     ids.  If no IDs are provided, all music will be returned.
@@ -33,7 +34,7 @@ export default function Docs() {
 - \`/api/get_aligned_lyrics\`: Get list of timestamps for each word in the lyrics
 - \`/api/clip\`:  Get clip information based on ID passed as query parameter \`id\`
 - \`/api/concat\`: Generate the whole song from extensions
-- \`/api/persona\`: Get persona information and clips based on ID and page number
+- \`/api/persona\`: Get Style Persona information and clips based on ID and page number
 \`\`\`
 
 Feel free to explore the detailed API parameters and conduct tests on this page.

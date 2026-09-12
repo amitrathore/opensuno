@@ -11,6 +11,17 @@ import { BrowserContext, Page, Locator, chromium, firefox } from 'rebrowser-play
 import { createCursor, Cursor } from 'ghost-cursor-playwright';
 import { promises as fs } from 'fs';
 import path from 'node:path';
+import { DEFAULT_MODEL, SUNO_MODELS, resolveModel } from './models';
+import {
+  normalizePersonaDetail,
+  normalizePersonaId,
+  normalizePersonaList,
+  normalizePersonaPage,
+  type PersonaDetailResponse,
+  type PersonaListResponse,
+} from './personas';
+
+export { DEFAULT_MODEL, SUNO_MODELS } from './models';
 
 // sunoApi instance caching
 const globalForSunoApi = global as unknown as { sunoApiCache?: Map<string, SunoApi> };
@@ -18,18 +29,6 @@ const cache = globalForSunoApi.sunoApiCache || new Map<string, SunoApi>();
 globalForSunoApi.sunoApiCache = cache;
 
 const logger = pino();
-
-// Suno model versions
-export const SUNO_MODELS = {
-  V3_5: 'chirp-v3-5',
-  V4: 'chirp-v4',
-  V4_5_PLUS: 'chirp-bluejay',  // V4.5+ (蓝松鸦)
-  V4_5_PRO: 'chirp-auk',        // V4.5 Pro (海雀)
-  V5: 'chirp-crow',             // V5 (乌鸦)
-} as const;
-
-// Default to latest version (V5)
-export const DEFAULT_MODEL = SUNO_MODELS.V5;
 
 export interface AudioInfo {
   id: string; // Unique identifier for the audio
@@ -48,34 +47,6 @@ export interface AudioInfo {
   negative_tags?: string; // Negative tags of music.
   duration?: string; // Duration of the audio
   error_message?: string; // Error message if any
-}
-
-interface PersonaResponse {
-  persona: {
-    id: string;
-    name: string;
-    description: string;
-    image_s3_id: string;
-    root_clip_id: string;
-    clip: any; // You can define a more specific type if needed
-    user_display_name: string;
-    user_handle: string;
-    user_image_url: string;
-    persona_clips: Array<{
-      clip: any; // You can define a more specific type if needed
-    }>;
-    is_suno_persona: boolean;
-    is_trashed: boolean;
-    is_owned: boolean;
-    is_public: boolean;
-    is_public_approved: boolean;
-    is_loved: boolean;
-    upvote_count: number;
-    clip_count: number;
-  };
-  total_results: number;
-  current_page: number;
-  is_following: boolean;
 }
 
 class SunoApi {
@@ -429,7 +400,8 @@ class SunoApi {
     make_instrumental: boolean = false,
     model?: string,
     wait_audio: boolean = false,
-    negative_tags?: string
+    negative_tags?: string,
+    persona_id?: string
   ): Promise<AudioInfo[]> {
     const startTime = Date.now();
     const audios = await this.generateSongs(
@@ -440,7 +412,11 @@ class SunoApi {
       make_instrumental,
       model,
       wait_audio,
-      negative_tags
+      negative_tags,
+      undefined,
+      undefined,
+      undefined,
+      persona_id
     );
     const costTime = Date.now() - startTime;
     logger.info(
@@ -475,7 +451,8 @@ class SunoApi {
     negative_tags?: string,
     task?: string,
     continue_clip_id?: string,
-    continue_at?: number
+    continue_at?: number,
+    persona_id?: string
   ): Promise<AudioInfo[]> {
     await this.keepAlive();
     const captchaToken = await this.getCaptcha();
@@ -485,7 +462,7 @@ class SunoApi {
 
     const payload: any = {
       make_instrumental: make_instrumental,
-      mv: model || DEFAULT_MODEL,
+      mv: resolveModel(model),
       prompt: '',
       generation_type: 'TEXT',
       continue_at: continue_at,
@@ -507,7 +484,7 @@ class SunoApi {
       cover_clip_id: null,
       cover_start_s: null,
       cover_end_s: null,
-      persona_id: null,
+      persona_id: normalizePersonaId(persona_id),
       artist_clip_id: null,
       artist_start_s: null,
       artist_end_s: null,
@@ -779,10 +756,27 @@ class SunoApi {
     };
   }
 
-  public async getPersonaPaginated(personaId: string, page: number = 1): Promise<PersonaResponse> {
+  public async listPersonas(): Promise<PersonaListResponse> {
     await this.keepAlive(false);
-    
-    const url = `${SunoApi.BASE_URL}/api/persona/get-persona-paginated/${personaId}/?page=${page}`;
+
+    const response = await this.client.post(
+      `${SunoApi.BASE_URL}/api/search/`,
+      { search_queries: [{ term: '', search_type: 'library_persona' }] },
+      { timeout: 10000 }
+    );
+
+    return normalizePersonaList(response.data);
+  }
+
+  public async getPersonaPaginated(
+    personaId: string,
+    page: number = 0
+  ): Promise<PersonaDetailResponse> {
+    await this.keepAlive(false);
+
+    const normalizedPersonaId = normalizePersonaId(personaId)!;
+    const normalizedPage = normalizePersonaPage(page);
+    const url = `${SunoApi.BASE_URL}/api/persona/get-persona-paginated/${encodeURIComponent(normalizedPersonaId)}/?page=${normalizedPage}`;
     
     logger.info(`Fetching persona data: ${url}`);
     
@@ -794,7 +788,7 @@ class SunoApi {
       throw new Error('Error response: ' + response.statusText);
     }
 
-    return response.data;
+    return normalizePersonaDetail(response.data);
   }
 }
 
